@@ -3,7 +3,16 @@ import { Navigate } from "react-router-dom";
 import { useConvexAuth } from "convex/react";
 
 export function SignIn() {
-  const { isAuthenticated } = useConvexAuth();
+  const { isAuthenticated, isLoading } = useConvexAuth();
+
+  // Show loading state while authentication is being determined
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
@@ -19,9 +28,15 @@ export function SignIn() {
         </div>
         <ClerkSignIn
           signUpUrl="/sign-up"
-          redirectUrl="/"
+          forceRedirectUrl="/"
           routing="path"
           path="/sign-in"
+          appearance={{
+            elements: {
+              rootBox: "w-full",
+              card: "shadow-lg",
+            },
+          }}
         />
       </div>
     </div>

@@ -22,7 +22,14 @@ export default function App() {
             Social Media Manager
           </h2>
           <Authenticated>
-            <UserButton afterSignOutUrl="/sign-in" />
+            <UserButton
+              afterSignOutUrl="/sign-in"
+              appearance={{
+                elements: {
+                  avatarBox: "h-8 w-8",
+                },
+              }}
+            />
           </Authenticated>
         </header>
         <main className="flex-1">
@@ -51,6 +58,8 @@ export default function App() {
                 </RequireAuth>
               }
             />
+            {/* Add fallback route */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
         <Toaster />
@@ -64,9 +73,11 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
+      <AuthLoading>
+        <div className="flex justify-center items-center min-h-[400px]">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </AuthLoading>
     );
   }
 
@@ -78,12 +89,24 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function Content() {
-  const { isAuthenticated } = useConvexAuth();
-  const loggedInUser = isAuthenticated;
+  const { isAuthenticated, isLoading } = useConvexAuth();
 
-  if (!loggedInUser) {
+  // Wait for authentication to be determined
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
     return <Navigate to="/sign-in" replace />;
   }
 
-  return <SocialMediaDashboard />;
+  return (
+    <Authenticated>
+      <SocialMediaDashboard />
+    </Authenticated>
+  );
 }
