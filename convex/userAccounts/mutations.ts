@@ -46,3 +46,22 @@ export const addTikTokAccount = mutation({
     });
   },
 });
+
+export const saveThreadsConnection = mutation({
+  args: {
+    userId: v.string(),
+    threadsData: v.object({
+      threadsId: v.string(),
+      username: v.string(),
+      profilePictureUrl: v.optional(v.string()),
+      biography: v.optional(v.string()),
+      accessToken: v.string(),
+      expiresAt: v.number(),
+      scopes: v.string(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    // TODO: Implement saving logic
+    return null;
+  },
+});

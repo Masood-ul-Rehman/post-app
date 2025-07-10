@@ -3,7 +3,7 @@ import { SocialAccount } from "../types/accounts";
 
 interface Post {
   _id: Id<"posts">;
-  platform: "facebook" | "instagram" | "linkedin";
+  platform: "facebook" | "instagram" | "linkedin" | "threads" | "pinterest";
   accountId: string;
   content: string;
   imageUrl?: string;
@@ -80,13 +80,12 @@ export function PostsList({ posts, accounts }: PostsListProps) {
               <div className="flex-1">
                 <div className="flex items-center space-x-2 mb-2">
                   <div
-                    className={`p-1 rounded ${
-                      post.platform === "facebook"
+                    className={`p-1 rounded ${post.platform === "facebook"
                         ? "bg-blue-100"
                         : post.platform === "instagram"
                           ? "bg-pink-100"
                           : "bg-gray-100"
-                    }`}
+                      }`}
                   >
                     {post.platform === "facebook" ? (
                       <svg

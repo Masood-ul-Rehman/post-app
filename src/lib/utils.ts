@@ -27,6 +27,11 @@ export const socialEnv = {
     clientSecret: import.meta.env.VITE_THREADS_CLIENT_SECRET,
     redirectUri: import.meta.env.VITE_THREADS_REDIRECT_URI,
   },
+  pinterest: {
+    clientId: import.meta.env.VITE_PINTEREST_CLIENT_ID,
+    clientSecret: import.meta.env.VITE_PINTEREST_CLIENT_SECRET,
+    redirectUri: import.meta.env.VITE_PINTEREST_REDIRECT_URI,
+  },
   tiktok: {
     clientKey: import.meta.env.VITE_TIKTOK_CLIENT_KEY,
     clientSecret: import.meta.env.VITE_TIKTOK_CLIENT_SECRET,

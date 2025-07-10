@@ -4,6 +4,7 @@ import { clerkWebhookAction } from "./api/webhooks/clerk/actions";
 import { facebookCallbackAction } from "./api/auth/accounts/facebook/actions";
 import { linkedinCallbackAction } from "./api/auth/accounts/linkedin/actions";
 import { threadsCallbackAction } from "./api/auth/accounts/threads/actions";
+import { pinterestCallbackAction } from "./api/auth/accounts/pinterest/actions";
 import {
   tiktokCallbackAction,
   tiktokWebhookVerificationAction,
@@ -57,6 +58,12 @@ http.route({
   path: "/auth/threads/callback",
   method: "GET",
   handler: threadsCallbackAction,
+});
+
+http.route({
+  path: "/auth/pinterest/callback",
+  method: "GET",
+  handler: pinterestCallbackAction,
 });
 
 export default http;

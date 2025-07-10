@@ -32,7 +32,6 @@ export function InstagramConnectBtn({
     const state = Math.random().toString(36).substring(7);
     sessionStorage.setItem("instagram_oauth_state", state);
     const params = new URLSearchParams({
-      force_reauth: "true",
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: "code",

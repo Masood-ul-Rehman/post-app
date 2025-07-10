@@ -30,7 +30,8 @@ export function ThreadsConnectBtn({
       return;
     }
     console.log("Threads ENV:", { clientId, redirectUri });
-    const state = Math.random().toString(36).substring(7);
+    const stateObj = { userId, random: Math.random().toString(36).substring(7) };
+    const state = encodeURIComponent(JSON.stringify(stateObj));
     sessionStorage.setItem("threads_oauth_state", state);
     const params = new URLSearchParams({
       client_id: clientId,
@@ -52,10 +53,15 @@ export function ThreadsConnectBtn({
           toast.error("Invalid OAuth state");
           return;
         }
+        let userIdFromState = userId;
+        try {
+          const stateObj = JSON.parse(decodeURIComponent(event.data.state));
+          userIdFromState = stateObj.userId;
+        } catch { }
         try {
           const accountData = {
             ...event.data.data,
-            userId,
+            userId: userIdFromState,
           };
           await addAccount(accountData);
           toast.success(`Connected ${accountData.accountName} successfully!`);

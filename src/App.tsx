@@ -67,7 +67,6 @@ export default function App() {
     </BrowserRouter>
   );
 }
-
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useConvexAuth();
 
@@ -110,3 +109,4 @@ function Content() {
     </Authenticated>
   );
 }
+

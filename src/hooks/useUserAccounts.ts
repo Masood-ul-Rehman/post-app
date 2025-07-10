@@ -18,7 +18,7 @@ export function useUserAccounts(userId: string) {
   const transformedMetaAccounts: SocialAccount[] = (metaAccounts ?? []).map(
     (account) => ({
       _id: account._id,
-      platform: account.accountType as "facebook" | "instagram",
+      platform: account.accountType as "facebook" | "instagram" | "threads" | "pinterest",
       accountId: account.pageId,
       accountName: account.accountName,
       isActive: true,

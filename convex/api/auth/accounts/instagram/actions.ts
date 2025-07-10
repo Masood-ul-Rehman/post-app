@@ -206,13 +206,17 @@ export const instagramCallbackAction = httpAction(async (ctx, request) => {
     const { access_token: shortLivedToken, user_id } = tokenData;
 
     // Step 2: Exchange short-lived token for long-lived token
+    // Log the full URL and token for debugging
+    const longLivedTokenUrl =
+      `https://graph.instagram.com/v17.0/access_token?` +
+      `grant_type=ig_exchange_token&` +
+      `client_secret=${clientSecret}&` +
+      `access_token=${shortLivedToken}`;
+    console.log("Long-lived token URL:", longLivedTokenUrl);
+    console.log("Short-lived token:", shortLivedToken);
+
     console.log("Getting long-lived access token...");
-    const longLivedTokenResponse = await fetch(
-      `https://graph.instagram.com/access_token?` +
-        `grant_type=ig_exchange_token&` +
-        `client_secret=${clientSecret}&` +
-        `access_token=${shortLivedToken}`
-    );
+    const longLivedTokenResponse = await fetch(longLivedTokenUrl);
 
     if (!longLivedTokenResponse.ok) {
       const errorText = await longLivedTokenResponse.text();
