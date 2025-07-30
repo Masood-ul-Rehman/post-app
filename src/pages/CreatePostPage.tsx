@@ -17,14 +17,29 @@
  * - Uploaded file URLs and keys are available via getUploadedFiles()
  */
 
-import { useState, useRef, SetStateAction, useEffect } from "react";
+import { useState, useRef, useEffect, SetStateAction } from "react";
 import { Button } from "../components/ui/button";
+
+interface SocialAccount {
+    _id: string;
+    accountId: string;
+    accountName: string;
+    platform: string;
+}
+
+interface UploadTask {
+    id: string;
+    file: File;
+    status: "pending" | "uploading" | "done" | "error";
+    progress: number;
+}
 import {
     Card,
     CardContent,
     CardHeader,
     CardTitle,
 } from "../components/ui/card";
+import { toast } from "sonner";
 import { Textarea } from "../components/ui/textarea";
 import { Checkbox } from "../components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -74,6 +89,7 @@ export default function CreatePostPage() {
     const [scheduledDate, setScheduledDate] = useState("");
     const [scheduledTime, setScheduledTime] = useState("");
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+    const [isPosting, setIsPosting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const { userId } = useAuth();
@@ -90,7 +106,7 @@ export default function CreatePostPage() {
         "tiktok",
     ];
     const postableAccounts = accounts.filter((acc) =>
-        SUPPORTED_PLATFORMS.includes(acc.platform)
+        SUPPORTED_PLATFORMS.includes(acc.platform),
     );
 
     // Use the Zustand upload store
@@ -142,7 +158,7 @@ export default function CreatePostPage() {
         setSelectedAccounts((prev) =>
             prev.includes(accountId)
                 ? prev.filter((id) => id !== accountId)
-                : [...prev, accountId]
+                : [...prev, accountId],
         );
     };
 
@@ -194,23 +210,8 @@ export default function CreatePostPage() {
         }
     };
 
-    const handlePublish = () => {
-        const uploadedFiles = getUploadedFiles();
-        console.log("Publishing post with content:", postContent);
-        console.log("Selected accounts:", selectedAccounts);
-        console.log("Uploaded files:", uploadedFiles);
-
-        setSelectedAccounts((prev) =>
-            prev.includes(accountId)
-                ? prev.filter((id) => id !== accountId)
-                : [...prev, accountId]
-        );
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-
-        if (!content.trim()) {
+    const handlePublish = async () => {
+        if (!postContent.trim()) {
             toast.error("Please enter post content");
             return;
         }
@@ -222,19 +223,19 @@ export default function CreatePostPage() {
 
         if (!userId) {
             toast.error("User not authenticated");
-            setIsPosting(false);
             return;
         }
 
+        const uploadedFiles = getUploadedFiles();
         // Check if Instagram posts have images
         const instagramAccounts = accounts.filter(
             (acc) =>
-                selectedAccounts.includes(acc.accountId) &&
-                acc.platform === "instagram"
+                selectedAccounts.includes(acc._id) &&
+                acc.platform === "instagram",
         );
 
-        if (instagramAccounts.length > 0 && fileUrls.length === 0) {
-            toast.error("Instagram posts require an image URL");
+        if (instagramAccounts.length > 0 && uploadedFiles.length === 0) {
+            toast.error("Instagram posts require at least one image");
             return;
         }
 
@@ -243,9 +244,9 @@ export default function CreatePostPage() {
         try {
             let scheduledFor: number | undefined;
 
-            if (isScheduled && scheduleDate && scheduleTime) {
+            if (isScheduled && scheduledDate && scheduledTime) {
                 const scheduledDateTime = new Date(
-                    `${scheduleDate}T${scheduleTime}`
+                    `${scheduledDate}T${scheduledTime}`,
                 );
                 if (scheduledDateTime <= new Date()) {
                     toast.error("Scheduled time must be in the future");
@@ -255,20 +256,22 @@ export default function CreatePostPage() {
                 scheduledFor = scheduledDateTime.getTime();
             }
 
+            // Extract URLs from uploaded files
+            const uploadedFilesUrls = uploadedFiles
+                .map((file) => file.url)
+                .filter((url) => url !== undefined);
             // Create posts for each selected account
             const promises = selectedAccounts.map((accountId) => {
-                const account = accounts.find(
-                    (acc) => acc.accountId === accountId
-                );
+                const account = accounts.find((acc) => acc._id === accountId);
                 if (!account) return Promise.resolve();
 
                 return createPost({
                     platform: account.platform,
                     accountId: account.accountId,
-                    content,
-                    fileUrls: fileUrls,
+                    content: postContent,
+                    fileUrls: uploadedFilesUrls,
                     scheduledFor,
-                    userId: userId!,
+                    userId: userId,
                 });
             });
 
@@ -277,14 +280,14 @@ export default function CreatePostPage() {
             toast.success(
                 isScheduled
                     ? `Post scheduled for ${selectedAccounts.length} account(s)`
-                    : `Post published to ${selectedAccounts.length} account(s)`
+                    : `Post published to ${selectedAccounts.length} account(s)`,
             );
 
             // Reset form
-            setContent("");
+            setPostContent("");
             setSelectedAccounts([]);
-            setScheduleDate("");
-            setScheduleTime("");
+            setScheduledDate("");
+            setScheduledTime("");
             setIsScheduled(false);
         } catch (error) {
             toast.error("Failed to create post");
@@ -293,6 +296,92 @@ export default function CreatePostPage() {
             setIsPosting(false);
         }
     };
+
+    // const handleSubmit = async (e: React.FormEvent) => {
+    //     e.preventDefault();
+
+    //     if (!postContent.trim()) {
+    //         toast.error("Please enter post content");
+    //         return;
+    //     }
+
+    //     if (selectedAccounts.length === 0) {
+    //         toast.error("Please select at least one account");
+    //         return;
+    //     }
+
+    //     if (!userId) {
+    //         toast.error("User not authenticated");
+    //         setIsPosting(false);
+    //         return;
+    //     }
+
+    //     const uploadedFiles = getUploadedFiles();
+    //     // Check if Instagram posts have images
+    //     const instagramAccounts = accounts.filter(
+    //         (acc) =>
+    //             selectedAccounts.includes(acc._id) &&
+    //             acc.platform === "instagram",
+    //     );
+
+    //     if (instagramAccounts.length > 0 && uploadedFiles.length === 0) {
+    //         toast.error("Instagram posts require an image");
+    //         return;
+    //     }
+
+    //     setIsPosting(true);
+
+    //     try {
+    //         let scheduledFor: number | undefined;
+
+    //         if (isScheduled && scheduledDate && scheduledTime) {
+    //             const scheduledDateTime = new Date(
+    //                 `${scheduledDate}T${scheduledTime}`,
+    //             );
+    //             if (scheduledDateTime <= new Date()) {
+    //                 toast.error("Scheduled time must be in the future");
+    //                 setIsPosting(false);
+    //                 return;
+    //             }
+    //             scheduledFor = scheduledDateTime.getTime();
+    //         }
+    //
+    //         // Create posts for each selected account
+    //         const promises = selectedAccounts.map((accountId) => {
+    //             const account = accounts.find((acc) => acc._id === accountId);
+    //             if (!account) return Promise.resolve();
+
+    //             return createPost({
+    //                 platform: account.platform,
+    //                 accountId: account.accountId,
+    //                 content: postContent,
+    //                 fileUrls: uploadedFilesUrls,
+    //                 scheduledFor,
+    //                 userId: userId,
+    //             });
+    //         });
+
+    //         await Promise.all(promises);
+
+    //         toast.success(
+    //             isScheduled
+    //                 ? `Post scheduled for ${selectedAccounts.length} account(s)`
+    //                 : `Post published to ${selectedAccounts.length} account(s)`,
+    //         );
+
+    //         // Reset form
+    //         setPostContent("");
+    //         setSelectedAccounts([]);
+    //         setScheduledDate("");
+    //         setScheduledTime("");
+    //         setIsScheduled(false);
+    //     } catch (error) {
+    //         toast.error("Failed to create post");
+    //         console.error(error);
+    //     } finally {
+    //         setIsPosting(false);
+    //     }
+    // };
 
     return (
         <div className="min-h-screen bg-gray-50 p-4">
@@ -323,11 +412,9 @@ export default function CreatePostPage() {
                                 <Textarea
                                     placeholder="What's on your mind?"
                                     value={postContent}
-                                    onChange={(e: {
-                                        target: {
-                                            value: SetStateAction<string>;
-                                        };
-                                    }) => setPostContent(e.target.value)}
+                                    onChange={(
+                                        e: React.ChangeEvent<HTMLTextAreaElement>,
+                                    ) => setPostContent(e.target.value)}
                                     className="min-h-[120px] resize-none"
                                 />
 
@@ -426,7 +513,7 @@ export default function CreatePostPage() {
                                                 {
                                                     tasks.filter(
                                                         (t) =>
-                                                            t.status === "done"
+                                                            t.status === "done",
                                                     ).length
                                                 }{" "}
                                                 of {tasks.length} complete
@@ -444,7 +531,7 @@ export default function CreatePostPage() {
                                         {tasks
                                             .filter(
                                                 (task) =>
-                                                    task.file && task.file.name
+                                                    task.file && task.file.name,
                                             )
                                             .map((task, index) => (
                                                 <div
@@ -454,11 +541,11 @@ export default function CreatePostPage() {
                                                     <GripVertical className="w-4 h-4 text-gray-400" />
 
                                                     {task.file.type?.startsWith(
-                                                        "image/"
+                                                        "image/",
                                                     ) ? (
                                                         <img
                                                             src={URL.createObjectURL(
-                                                                task.file
+                                                                task.file,
                                                             )}
                                                             alt={task.file.name}
                                                             className="w-12 h-12 object-cover rounded"
@@ -468,7 +555,7 @@ export default function CreatePostPage() {
                                                             {getFileIcon(
                                                                 task.file
                                                                     .type ||
-                                                                    "application/octet-stream"
+                                                                    "application/octet-stream",
                                                             )}
                                                         </div>
                                                     )}
@@ -485,14 +572,14 @@ export default function CreatePostPage() {
                                                                 className={`text-xs ${getStatusColor(task.status)}`}
                                                             >
                                                                 {getStatusText(
-                                                                    task.status
+                                                                    task.status,
                                                                 )}
                                                             </Badge>
                                                         </div>
                                                         <p className="text-xs text-gray-500">
                                                             {formatFileSize(
                                                                 task.file
-                                                                    .size || 0
+                                                                    .size || 0,
                                                             )}
                                                         </p>
                                                         {task.status ===
@@ -558,10 +645,11 @@ export default function CreatePostPage() {
                                     >
                                         <Checkbox
                                             checked={selectedAccounts.includes(
-                                                account._id
+                                                account._id,
                                             )}
-                                            // disabled={!account.connected}
-                                            onChange={() => {}}
+                                            onCheckedChange={() =>
+                                                toggleAccount(account._id)
+                                            }
                                         />
                                         <div className="flex items-center gap-2 flex-1">
                                             {/* {account.icon} */}
@@ -624,7 +712,7 @@ export default function CreatePostPage() {
                                                 value={scheduledDate}
                                                 onChange={(e) =>
                                                     setScheduledDate(
-                                                        e.target.value
+                                                        e.target.value,
                                                     )
                                                 }
                                                 min={
@@ -653,7 +741,7 @@ export default function CreatePostPage() {
                                                     };
                                                 }) =>
                                                     setScheduledTime(
-                                                        e.target.value
+                                                        e.target.value,
                                                     )
                                                 }
                                                 className="mt-1"
@@ -676,16 +764,24 @@ export default function CreatePostPage() {
                                 size="lg"
                                 onClick={handlePublish}
                                 disabled={
+                                    isPosting ||
                                     !postContent.trim() ||
                                     selectedAccounts.length === 0 ||
                                     tasks.some(
                                         (t) =>
                                             t.status === "uploading" ||
-                                            t.status === "pending"
+                                            t.status === "pending",
                                     )
                                 }
                             >
-                                {isScheduled ? (
+                                {isPosting ? (
+                                    <>
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                        {isScheduled
+                                            ? "Scheduling..."
+                                            : "Publishing..."}
+                                    </>
+                                ) : isScheduled ? (
                                     <>
                                         <Clock className="w-4 h-4 mr-2" />
                                         Schedule Post
@@ -698,7 +794,7 @@ export default function CreatePostPage() {
                             {tasks.some(
                                 (t) =>
                                     t.status === "uploading" ||
-                                    t.status === "pending"
+                                    t.status === "pending",
                             ) && (
                                 <p className="text-xs text-amber-600 text-center">
                                     Please wait for all files to finish
