@@ -16,7 +16,7 @@ export const createPost = mutation({
         ),
         accountId: v.string(),
         content: v.string(),
-        imageUrl: v.optional(v.string()),
+        fileUrls: v.array(v.string()),
         scheduledFor: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
@@ -27,7 +27,7 @@ export const createPost = mutation({
             platform: args.platform,
             accountId: args.accountId,
             content: args.content,
-            imageUrl: args.imageUrl,
+            mediaUrls: args.fileUrls,
             status,
             scheduledFor: args.scheduledFor,
             publishedAt: args.scheduledFor ? undefined : now,

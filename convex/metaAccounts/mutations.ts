@@ -61,3 +61,14 @@ export const addAccount = mutation({
     return accountId;
   },
 });
+
+export const updateAccessToken = mutation({
+  args: {
+    accountId: v.id("metaAccounts"),
+    accessToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.accountId, { accessToken: args.accessToken });
+    return null;
+  },
+});

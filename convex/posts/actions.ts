@@ -1,6 +1,7 @@
 import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { api } from "../_generated/api";
+import { link } from "fs";
 
 // Types for better type safety
 interface PlatformResult {
@@ -39,7 +40,7 @@ export const publishToPlatform = action({
             }
 
             // Validate required fields
-            if (!post.content && !post.imageUrl) {
+            if (!post.content && !post.mediaUrls) {
                 throw new Error("Post must have content or image");
             }
 
@@ -77,7 +78,7 @@ export const publishToPlatform = action({
                         {
                             pageId: fbAccount.pageId,
                             message: post.content || "",
-                            imageUrl: post.imageUrl,
+                            mediaUrls: post.mediaUrls || [],
                             accessToken: fbAccount.accessToken,
                         }
                     );
@@ -180,7 +181,7 @@ export const publishFacebook = action({
     args: {
         pageId: v.string(),
         message: v.string(),
-        imageUrl: v.optional(v.string()),
+        mediaUrls: v.array(v.string()),
         link: v.optional(v.string()),
         accessToken: v.string(),
     },
@@ -188,39 +189,232 @@ export const publishFacebook = action({
         try {
             let result;
 
-            if (args.imageUrl) {
-                // Post image to /photos endpoint
-                const photoBody = {
-                    url: args.imageUrl,
-                    caption: args.message,
-                    access_token: args.accessToken,
-                };
+            if (args.mediaUrls && args.mediaUrls.length > 0) {
+                if (args.mediaUrls.length === 1) {
+                    // Single media item - use direct posting
+                    const mediaUrl = args.mediaUrls[0];
+                    const isVideo = /\.(mp4|mov|avi|wmv|flv|webm)$/i.test(mediaUrl);
 
-                console.log(
-                    "[publishFacebook] /photos request body:",
-                    photoBody
-                );
+                    if (isVideo) {
+                        // For videos, try with extended timeout and add additional parameters
+                        const videoBody = {
+                            url: mediaUrl,
+                            description: args.message,
+                            access_token: args.accessToken,
+                            // Add video-specific parameters
+                            published: true,
+                            title: args.message?.substring(0, 100) || "Video Post"
+                        };
 
-                const photoResponse = await fetch(
-                    `https://graph.facebook.com/v18.0/${args.pageId}/photos`,
-                    {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(photoBody),
+                        console.log("[publishFacebook] /videos request body:", videoBody);
+
+                        // Use longer timeout for video uploads
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
+                        try {
+                            const videoResponse = await fetch(
+                                `https://graph.facebook.com/v18.0/${args.pageId}/videos`,
+                                {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(videoBody),
+                                    signal: controller.signal
+                                }
+                            );
+
+                            clearTimeout(timeoutId);
+                            result = await videoResponse.json();
+                            console.log("[publishFacebook] /videos response:", result);
+
+                            if (!videoResponse.ok || result.error) {
+                                // If video upload fails, fall back to link post
+                                console.log("[publishFacebook] Video upload failed, falling back to link post");
+                                throw new Error("VIDEO_UPLOAD_FAILED");
+                            }
+                        } catch (error) {
+                            clearTimeout(timeoutId);
+                            if ((error as Error).message === "VIDEO_UPLOAD_FAILED" || (error as Error).name === 'AbortError') {
+                                // Fallback: Post as a link with the video URL
+                                console.log("[publishFacebook] Falling back to link post for video");
+                                const linkBody = {
+                                    message: `${args.message}\n\nVideo: ${mediaUrl}`,
+                                    link: mediaUrl,
+                                    access_token: args.accessToken,
+                                };
+
+                                const linkResponse = await fetch(
+                                    `https://graph.facebook.com/v18.0/${args.pageId}/feed`,
+                                    {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify(linkBody),
+                                    }
+                                );
+
+                                result = await linkResponse.json();
+                                console.log("[publishFacebook] Link fallback response:", result);
+
+                                if (!linkResponse.ok || result.error) {
+                                    throw new Error(
+                                        result.error?.message ||
+                                        `HTTP ${linkResponse.status}: ${linkResponse.statusText}`
+                                    );
+                                }
+                            } else {
+                                throw error;
+                            }
+                        }
+                    } else {
+                        // Handle photos normally
+                        const photoBody = {
+                            url: mediaUrl,
+                            caption: args.message,
+                            access_token: args.accessToken,
+                        };
+
+                        console.log("[publishFacebook] /photos request body:", photoBody);
+
+                        const photoResponse = await fetch(
+                            `https://graph.facebook.com/v18.0/${args.pageId}/photos`,
+                            {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(photoBody),
+                            }
+                        );
+
+                        result = await photoResponse.json();
+                        console.log("[publishFacebook] /photos response:", result);
+
+                        if (!photoResponse.ok || result.error) {
+                            throw new Error(
+                                result.error?.message ||
+                                `HTTP ${photoResponse.status}: ${photoResponse.statusText}`
+                            );
+                        }
                     }
-                );
+                } else {
+                    // Multiple media items - use batch upload approach
+                    const mediaIds = [];
+                    const failedVideos = [];
 
-                result = await photoResponse.json();
-                console.log("[publishFacebook] /photos response:", result);
+                    // Step 1: Upload each media item and collect their IDs
+                    for (const mediaUrl of args.mediaUrls) {
+                        const isVideo = /\.(mp4|mov|avi|wmv|flv|webm)$/i.test(mediaUrl);
 
-                if (!photoResponse.ok || result.error) {
-                    throw new Error(
-                        result.error?.message ||
-                            `HTTP ${photoResponse.status}: ${photoResponse.statusText}`
+                        const uploadBody = {
+                            url: mediaUrl,
+                            published: false, // Don't publish immediately
+                            access_token: args.accessToken,
+                        };
+
+                        console.log(
+                            `[publishFacebook] Uploading ${isVideo ? 'video' : 'photo'}:`,
+                            uploadBody
+                        );
+
+                        try {
+                            // Use timeout for video uploads
+                            const controller = new AbortController();
+                            let timeoutId;
+                            if (isVideo) {
+                                timeoutId = setTimeout(() => controller.abort(), 45000); // 45 second timeout
+                            }
+
+                            const uploadResponse = await fetch(
+                                `https://graph.facebook.com/v18.0/${args.pageId}/${isVideo ? 'videos' : 'photos'}`,
+                                {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(uploadBody),
+                                    signal: isVideo ? controller.signal : undefined
+                                }
+                            );
+
+                            if (timeoutId) clearTimeout(timeoutId);
+
+                            const uploadResult = await uploadResponse.json();
+                            console.log(`[publishFacebook] Upload ${isVideo ? 'video' : 'photo'} response:`, uploadResult);
+
+                            if (!uploadResponse.ok || uploadResult.error) {
+                                if (isVideo) {
+                                    // Track failed videos for fallback
+                                    console.log(`[publishFacebook] Video upload failed, will include as link: ${mediaUrl}`);
+                                    failedVideos.push(mediaUrl);
+                                    continue; // Skip adding to mediaIds, continue with next media
+                                } else {
+                                    throw new Error(
+                                        uploadResult.error?.message ||
+                                        `HTTP ${uploadResponse.status}: ${uploadResponse.statusText}`
+                                    );
+                                }
+                            }
+
+                            // Add media ID to collection
+                            mediaIds.push({
+                                media_fbid: uploadResult.id
+                            });
+
+                        } catch (error) {
+                            if (isVideo && ((error as Error).name === 'AbortError' || (error as Error).message.includes('video'))) {
+                                // Video timeout or upload error - add to failed videos
+                                console.log(`[publishFacebook] Video upload timeout/error, will include as link: ${mediaUrl}`);
+                                failedVideos.push(mediaUrl);
+                                continue;
+                            } else {
+                                throw error;
+                            }
+                        }
+                    }
+
+                    // Step 2: Create a single post with all media items
+                    let finalMessage = args.message;
+
+                    // If there are failed videos, add them as links in the message
+                    if (failedVideos.length > 0) {
+                        const videoLinks = failedVideos.map(url => `Video: ${url}`).join('\n');
+                        finalMessage = `${args.message}\n\n${videoLinks}`;
+                    }
+
+                    const postBody: any = {
+                        message: finalMessage,
+                        access_token: args.accessToken,
+                        link: '',
+                    };
+
+                    // Only add attached_media if we have successful uploads
+                    if (mediaIds.length > 0) {
+                        postBody.attached_media = mediaIds;
+                    }
+
+                    if (args.link) {
+                        postBody.link = args.link;
+                    }
+
+                    console.log("[publishFacebook] Creating multi-media post:", postBody);
+
+                    const postResponse = await fetch(
+                        `https://graph.facebook.com/v18.0/${args.pageId}/feed`,
+                        {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(postBody),
+                        }
                     );
+
+                    result = await postResponse.json();
+                    console.log("[publishFacebook] Multi-media post response:", result);
+
+                    if (!postResponse.ok || result.error) {
+                        throw new Error(
+                            result.error?.message ||
+                            `HTTP ${postResponse.status}: ${postResponse.statusText}`
+                        );
+                    }
                 }
             } else {
-                // Post message only to /feed endpoint
+                // No media - text-only post to /feed endpoint
                 const feedBody: Record<string, string> = {
                     message: args.message,
                     access_token: args.accessToken,
@@ -247,7 +441,7 @@ export const publishFacebook = action({
                 if (!feedResponse.ok || result.error) {
                     throw new Error(
                         result.error?.message ||
-                            `HTTP ${feedResponse.status}: ${feedResponse.statusText}`
+                        `HTTP ${feedResponse.status}: ${feedResponse.statusText}`
                     );
                 }
             }
@@ -267,6 +461,240 @@ export const publishFacebook = action({
             };
         }
     },
+    // handler: async (_ctx, args): Promise<PlatformResult> => {
+    //     try {
+    //         let result;
+
+    //         if (args.mediaUrls && args.mediaUrls.length > 0) {
+    //             if (args.mediaUrls.length === 1) {
+    //                 // Single media item - use direct posting
+    //                 const mediaUrl = args.mediaUrls[0];
+    //                 const isVideo = /\.(mp4|mov|avi|wmv|flv|webm)$/i.test(mediaUrl);
+
+    //                 if (isVideo) {
+    //                     // For videos, try with extended timeout and add additional parameters
+    //                     const videoBody = {
+    //                         url: mediaUrl,
+    //                         description: args.message,
+    //                         access_token: args.accessToken,
+    //                         // Add video-specific parameters
+    //                         published: true,
+    //                         title: args.message?.substring(0, 100) || "Video Post"
+    //                     };
+
+    //                     console.log("[publishFacebook] /videos request body:", videoBody);
+
+    //                     // Use longer timeout for video uploads
+    //                     const controller = new AbortController();
+    //                     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
+    //                     try {
+    //                         const videoResponse = await fetch(
+    //                             `https://graph.facebook.com/v18.0/${args.pageId}/videos`,
+    //                             {
+    //                                 method: "POST",
+    //                                 headers: { "Content-Type": "application/json" },
+    //                                 body: JSON.stringify(videoBody),
+    //                                 signal: controller.signal
+    //                             }
+    //                         );
+
+    //                         clearTimeout(timeoutId);
+    //                         result = await videoResponse.json();
+    //                         console.log("[publishFacebook] /videos response:", result);
+
+    //                         if (!videoResponse.ok || result.error) {
+    //                             // If video upload fails, fall back to link post
+    //                             console.log("[publishFacebook] Video upload failed, falling back to link post");
+    //                             throw new Error("VIDEO_UPLOAD_FAILED");
+    //                         }
+    //                     } catch (error) {
+    //                         clearTimeout(timeoutId);
+    //                         if ((error as Error).message === "VIDEO_UPLOAD_FAILED" || (error as Error).name === 'AbortError') {
+    //                             // Fallback: Post as a link with the video URL
+    //                             console.log("[publishFacebook] Falling back to link post for video");
+    //                             const linkBody = {
+    //                                 message: `${args.message}\n\nVideo: ${mediaUrl}`,
+    //                                 link: mediaUrl,
+    //                                 access_token: args.accessToken,
+    //                             };
+
+    //                             const linkResponse = await fetch(
+    //                                 `https://graph.facebook.com/v18.0/${args.pageId}/feed`,
+    //                                 {
+    //                                     method: "POST",
+    //                                     headers: { "Content-Type": "application/json" },
+    //                                     body: JSON.stringify(linkBody),
+    //                                 }
+    //                             );
+
+    //                             result = await linkResponse.json();
+    //                             console.log("[publishFacebook] Link fallback response:", result);
+
+    //                             if (!linkResponse.ok || result.error) {
+    //                                 throw new Error(
+    //                                     result.error?.message ||
+    //                                     `HTTP ${linkResponse.status}: ${linkResponse.statusText}`
+    //                                 );
+    //                             }
+    //                         } else {
+    //                             throw error;
+    //                         }
+    //                     }
+    //                 } else {
+    //                     // Handle photos normally
+    //                     const photoBody = {
+    //                         url: mediaUrl,
+    //                         caption: args.message,
+    //                         access_token: args.accessToken,
+    //                     };
+
+    //                     console.log("[publishFacebook] /photos request body:", photoBody);
+
+    //                     const photoResponse = await fetch(
+    //                         `https://graph.facebook.com/v18.0/${args.pageId}/photos`,
+    //                         {
+    //                             method: "POST",
+    //                             headers: { "Content-Type": "application/json" },
+    //                             body: JSON.stringify(photoBody),
+    //                         }
+    //                     );
+
+    //                     result = await photoResponse.json();
+    //                     console.log("[publishFacebook] /photos response:", result);
+
+    //                     if (!photoResponse.ok || result.error) {
+    //                         throw new Error(
+    //                             result.error?.message ||
+    //                             `HTTP ${photoResponse.status}: ${photoResponse.statusText}`
+    //                         );
+    //                     }
+    //                 }
+    //             } else {
+    //                 // Multiple media items - use batch upload approach
+    //                 const mediaIds = [];
+
+    //                 // Step 1: Upload each media item and collect their IDs
+    //                 for (const mediaUrl of args.mediaUrls) {
+    //                     const isVideo = /\.(mp4|mov|avi|wmv|flv|webm)$/i.test(mediaUrl);
+
+    //                     const uploadBody = {
+    //                         url: mediaUrl,
+    //                         published: false, // Don't publish immediately
+    //                         access_token: args.accessToken,
+    //                     };
+
+    //                     console.log(
+    //                         `[publishFacebook] Uploading ${isVideo ? 'video' : 'photo'}:`,
+    //                         uploadBody
+    //                     );
+
+    //                     const uploadResponse = await fetch(
+    //                         `https://graph.facebook.com/v18.0/${args.pageId}/${isVideo ? 'videos' : 'photos'}`,
+    //                         {
+    //                             method: "POST",
+    //                             headers: { "Content-Type": "application/json" },
+    //                             body: JSON.stringify(uploadBody),
+    //                         }
+    //                     );
+
+    //                     const uploadResult = await uploadResponse.json();
+    //                     console.log(`[publishFacebook] Upload ${isVideo ? 'video' : 'photo'} response:`, uploadResult);
+
+    //                     if (!uploadResponse.ok || uploadResult.error) {
+    //                         throw new Error(
+    //                             uploadResult.error?.message ||
+    //                             `HTTP ${uploadResponse.status}: ${uploadResponse.statusText}`
+    //                         );
+    //                     }
+
+    //                     // Add media ID to collection
+    //                     mediaIds.push({
+    //                         media_fbid: uploadResult.id
+    //                     });
+    //                 }
+
+    //                 // Step 2: Create a single post with all media items
+    //                 const postBody = {
+    //                     message: args.message,
+    //                     attached_media: mediaIds,
+    //                     access_token: args.accessToken,
+    //                     link: ''
+    //                 };
+
+    //                 if (args.link) {
+    //                     postBody.link = args.link;
+    //                 }
+
+    //                 console.log("[publishFacebook] Creating multi-media post:", postBody);
+
+    //                 const postResponse = await fetch(
+    //                     `https://graph.facebook.com/v18.0/${args.pageId}/feed`,
+    //                     {
+    //                         method: "POST",
+    //                         headers: { "Content-Type": "application/json" },
+    //                         body: JSON.stringify(postBody),
+    //                     }
+    //                 );
+
+    //                 result = await postResponse.json();
+    //                 console.log("[publishFacebook] Multi-media post response:", result);
+
+    //                 if (!postResponse.ok || result.error) {
+    //                     throw new Error(
+    //                         result.error?.message ||
+    //                         `HTTP ${postResponse.status}: ${postResponse.statusText}`
+    //                     );
+    //                 }
+    //             }
+    //         } else {
+    //             // No media - text-only post to /feed endpoint
+    //             const feedBody: Record<string, string> = {
+    //                 message: args.message,
+    //                 access_token: args.accessToken,
+    //             };
+
+    //             if (args.link) {
+    //                 feedBody.link = args.link;
+    //             }
+
+    //             console.log("[publishFacebook] /feed request body:", feedBody);
+
+    //             const feedResponse = await fetch(
+    //                 `https://graph.facebook.com/v18.0/${args.pageId}/feed`,
+    //                 {
+    //                     method: "POST",
+    //                     headers: { "Content-Type": "application/json" },
+    //                     body: JSON.stringify(feedBody),
+    //                 }
+    //             );
+
+    //             result = await feedResponse.json();
+    //             console.log("[publishFacebook] /feed response:", result);
+
+    //             if (!feedResponse.ok || result.error) {
+    //                 throw new Error(
+    //                     result.error?.message ||
+    //                     `HTTP ${feedResponse.status}: ${feedResponse.statusText}`
+    //                 );
+    //             }
+    //         }
+
+    //         return {
+    //             success: true,
+    //             platformPostId: result.id,
+    //         };
+    //     } catch (error) {
+    //         console.error("[publishFacebook] Error:", error);
+    //         return {
+    //             success: false,
+    //             error:
+    //                 error instanceof Error
+    //                     ? error.message
+    //                     : "Facebook publish failed",
+    //         };
+    //     }
+    // },
 });
 
 // Instagram publishing implementation (fixed)
@@ -303,7 +731,7 @@ export const publishInstagram = action({
             if (!mediaRes.ok || mediaJson.error) {
                 throw new Error(
                     mediaJson.error?.message ||
-                        `Media creation failed: HTTP ${mediaRes.status}`
+                    `Media creation failed: HTTP ${mediaRes.status}`
                 );
             }
 
@@ -346,7 +774,7 @@ export const publishInstagram = action({
             if (!publishRes.ok || publishJson.error) {
                 throw new Error(
                     publishJson.error?.message ||
-                        `Media publish failed: HTTP ${publishRes.status}`
+                    `Media publish failed: HTTP ${publishRes.status}`
                 );
             }
 
@@ -430,7 +858,7 @@ export const publishThreads = action({
                 if (!mediaRes.ok || mediaJson.error) {
                     throw new Error(
                         mediaJson.error?.message ||
-                            `Threads media creation failed: HTTP ${mediaRes.status}`
+                        `Threads media creation failed: HTTP ${mediaRes.status}`
                     );
                 }
 
@@ -470,7 +898,7 @@ export const publishThreads = action({
                 if (!publishRes.ok || result.error) {
                     throw new Error(
                         result.error?.message ||
-                            `Threads publish failed: HTTP ${publishRes.status}`
+                        `Threads publish failed: HTTP ${publishRes.status}`
                     );
                 }
             } else {
@@ -504,7 +932,7 @@ export const publishThreads = action({
                 if (!textRes.ok || textJson.error) {
                     throw new Error(
                         textJson.error?.message ||
-                            `Threads text creation failed: HTTP ${textRes.status}`
+                        `Threads text creation failed: HTTP ${textRes.status}`
                     );
                 }
 
@@ -539,7 +967,7 @@ export const publishThreads = action({
                 if (!publishRes.ok || result.error) {
                     throw new Error(
                         result.error?.message ||
-                            `Threads publish failed: HTTP ${publishRes.status}`
+                        `Threads publish failed: HTTP ${publishRes.status}`
                     );
                 }
             }

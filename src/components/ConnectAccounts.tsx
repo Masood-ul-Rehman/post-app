@@ -26,11 +26,7 @@ export function ConnectAccounts({ accounts, userId }: ConnectAccountsProps) {
     "https://patient-woodpecker-658.convex.site/auth/facebook/callback"
   );
 
-  //handler connect facebook
-  //handler connect linkedin
-  //handle connect intagram - pending
-  //handle connect threads
-  //handle connect tiktok
+
   // const handleDisconnect = async (
   //   accountId: Id<"socialAccounts">,
   //   accountName: string

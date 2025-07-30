@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
@@ -13,11 +13,20 @@ export function CreatePost({ accounts }: CreatePostProps) {
     const { userId } = useAuth();
     const [content, setContent] = useState("");
     const [imageUrl, setImageUrl] = useState("");
+    const [imageUrl2, setImageUrl2] = useState("");
+    const [imageUrl3, setImageUrl3] = useState("");
     const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
     const [scheduleDate, setScheduleDate] = useState("");
     const [scheduleTime, setScheduleTime] = useState("");
     const [isScheduled, setIsScheduled] = useState(false);
     const [isPosting, setIsPosting] = useState(false);
+    const [fileUrls, setFileUrls] = useState<string[]>([]);
+
+
+    useEffect(() => {
+        setFileUrls([imageUrl, imageUrl2, imageUrl3].filter(Boolean));
+    }, [imageUrl, imageUrl2, imageUrl3]);
+
 
     const createPost = useMutation(api.posts.mutations.createPost);
 
@@ -55,7 +64,7 @@ export function CreatePost({ accounts }: CreatePostProps) {
                 acc.platform === "instagram"
         );
 
-        if (instagramAccounts.length > 0 && !imageUrl.trim()) {
+        if (instagramAccounts.length > 0 && fileUrls.length === 0) {
             toast.error("Instagram posts require an image URL");
             return;
         }
@@ -88,7 +97,7 @@ export function CreatePost({ accounts }: CreatePostProps) {
                     platform: account.platform,
                     accountId: account.accountId,
                     content,
-                    imageUrl: imageUrl.trim() || undefined,
+                    fileUrls: fileUrls,
                     scheduledFor,
                     userId: userId!,
                 });
@@ -173,11 +182,25 @@ export function CreatePost({ accounts }: CreatePostProps) {
                         onChange={(e) => setImageUrl(e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                         placeholder="https://example.com/image.jpg"
+                    /><input
+                        type="url"
+                        id="imageUrl"
+                        value={imageUrl2}
+                        onChange={(e) => setImageUrl2(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="https://example.com/image.jpg"
+                    /><input
+                        type="url"
+                        id="imageUrl"
+                        value={imageUrl3}
+                        onChange={(e) => setImageUrl3(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="https://example.com/image.jpg"
                     />
-                    {imageUrl && (
-                        <div className="mt-2">
+                    {fileUrls && fileUrls.map((url, idx) => (
+                        <div className="mt-2" key={idx}>
                             <img
-                                src={imageUrl}
+                                src={url}
                                 alt="Preview"
                                 className="max-w-xs max-h-48 object-cover rounded-md"
                                 onError={(e) => {
@@ -185,7 +208,7 @@ export function CreatePost({ accounts }: CreatePostProps) {
                                 }}
                             />
                         </div>
-                    )}
+                    ))}
                 </div>
 
                 {/* Account Selection */}
@@ -196,7 +219,9 @@ export function CreatePost({ accounts }: CreatePostProps) {
                     <div className="space-y-2">
                         {postableAccounts.length === 0 && (
                             <div className="text-sm text-red-500">
-                                No supported accounts connected. Supported platforms: Facebook, Instagram, Threads, Pinterest, LinkedIn, TikTok.
+                                No supported accounts connected. Supported
+                                platforms: Facebook, Instagram, Threads,
+                                Pinterest, LinkedIn, TikTok.
                             </div>
                         )}
                         {postableAccounts.map((account) => (

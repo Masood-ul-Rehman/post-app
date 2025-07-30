@@ -20,6 +20,9 @@ import type * as api_auth_accounts_pinterest_actions from "../api/auth/accounts/
 import type * as api_auth_accounts_threads_actions from "../api/auth/accounts/threads/actions.js";
 import type * as api_auth_accounts_tiktok_actions from "../api/auth/accounts/tiktok/actions.js";
 import type * as api_webhooks_clerk_actions from "../api/webhooks/clerk/actions.js";
+import type * as files_actions from "../files/actions.js";
+import type * as files_mutations from "../files/mutations.js";
+import type * as files_queries from "../files/queries.js";
 import type * as http from "../http.js";
 import type * as linkedinAccounts_mutations from "../linkedinAccounts/mutations.js";
 import type * as linkedinAccounts_queries from "../linkedinAccounts/queries.js";
@@ -53,6 +56,9 @@ declare const fullApi: ApiFromModules<{
   "api/auth/accounts/threads/actions": typeof api_auth_accounts_threads_actions;
   "api/auth/accounts/tiktok/actions": typeof api_auth_accounts_tiktok_actions;
   "api/webhooks/clerk/actions": typeof api_webhooks_clerk_actions;
+  "files/actions": typeof files_actions;
+  "files/mutations": typeof files_mutations;
+  "files/queries": typeof files_queries;
   http: typeof http;
   "linkedinAccounts/mutations": typeof linkedinAccounts_mutations;
   "linkedinAccounts/queries": typeof linkedinAccounts_queries;

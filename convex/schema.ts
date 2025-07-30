@@ -106,8 +106,18 @@ export default defineSchema({
         publishedAt: v.optional(v.number()),
         platformPostId: v.optional(v.string()),
         errorMessage: v.optional(v.string()),
+        mediaUrls: v.optional(v.array(v.string()))
     })
         .index("by_userId", ["userId"])
         .index("by_status", ["status"])
         .index("by_scheduled", ["scheduledFor"]),
+
+    files: defineTable({
+        userId: v.string(),
+        key: v.string(),
+        url: v.string(),
+        contentType: v.optional(v.string()),
+        size: v.optional(v.number()),
+        createdAt: v.optional(v.number()),
+    }).index("by_userId", ["userId"]),
 });

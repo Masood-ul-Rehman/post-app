@@ -12,6 +12,7 @@ import { UserButton } from "@clerk/clerk-react";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { SignIn } from "./components/auth/SignIn";
 import { SignUp } from "./components/auth/SignUp";
+import CreatePostPage from "./pages/CreatePostPage";
 
 export default function App() {
   return (
@@ -55,6 +56,14 @@ export default function App() {
               element={
                 <RequireAuth>
                   <Content />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/createpost"
+              element={
+                <RequireAuth>
+                  <CreatePostPage />
                 </RequireAuth>
               }
             />
